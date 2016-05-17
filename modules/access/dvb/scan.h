@@ -40,6 +40,7 @@ typedef struct
     int i_fec;
     int i_modulation;
     char c_polarization;
+    scan_type_t type;
 
 } scan_tuner_config_t;
 
@@ -49,20 +50,22 @@ typedef struct scan_parameter_t
     bool b_exhaustive;
     bool b_use_nit;
     bool b_free_only;
-    bool b_modulation_set;
-    bool b_symbolrate_set;
 
-    int i_modulation;
-    int i_symbolrate;
+    bool b_modulation_set;
+    unsigned i_symbolrate;
+
     struct
     {
         unsigned i_min;
         unsigned i_max;
         unsigned i_step;
+    } frequency;
 
-        unsigned i_count;    /* Number of frequency test to do */
-    } frequency,
-      bandwidth; /* Bandwidth should be 6, 7 or 8 */
+    struct
+    {
+        unsigned i_min;
+        unsigned i_max;
+    } bandwidth;/* Bandwidth should be 6, 7 or 8 */
 
     char *psz_scanlist_file;
     enum
@@ -80,6 +83,16 @@ typedef int (*scan_frontend_tune_cb)( scan_t *, void *, const scan_tuner_config_
 typedef int (*scan_frontend_stats_cb)( scan_t *, void *, int * );
 typedef int (*scan_demux_filter_cb)( scan_t *, void *, uint16_t, bool );
 typedef int (*scan_demux_read_cb)( scan_t *, void *, unsigned, size_t, uint8_t *, size_t * );
+
+typedef struct scan_service_t scan_service_t;
+typedef const void * (*scan_service_notify_cb)( scan_t *, void *, const scan_service_t *, const void *, bool );
+void scan_set_NotifyCB( scan_t *, scan_service_notify_cb );
+
+const char * scan_service_GetName( const scan_service_t *s );
+const char * scan_service_GetProvider( const scan_service_t *s );
+char * scan_service_GetUri( const scan_service_t *s );
+uint16_t scan_service_GetProgram( const scan_service_t *s );
+const char * scan_service_GetNetworkName( const scan_service_t *s );
 
 void scan_parameter_Init( scan_parameter_t * );
 void scan_parameter_Clean( scan_parameter_t * );

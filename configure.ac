@@ -218,6 +218,9 @@ case "${host_os}" in
     fi
     ;;
   *mingw32* | *cygwin* | *wince* | *mingwce*)
+    dnl Force libtool to not link to (shared) libgcc_s when detecting C++ dependencies
+    dnl When doing this test with -static-libgcc it will link on (static) libgcc_eh
+    CXXFLAGS="${CXXFLAGS} -static-libgcc"
     AC_CHECK_TOOL(WINDRES, windres, :)
     AC_CHECK_TOOL(OBJCOPY, objcopy, :)
     AH_TOP([#if defined(_WIN32) && !defined(_WIN32_WINNT)])
@@ -296,14 +299,36 @@ case "${host_os}" in
     SYS="${host_os}"
     ;;
 esac
-AM_CONDITIONAL(HAVE_DARWIN,  test "${SYS}" = "darwin")
+
+dnl WinRT
+AC_ARG_ENABLE(winstore_app,
+     AS_HELP_STRING([--enable-winstore-app],
+                    [Build targetted for Windows Store apps (default disabled)]))
+
+vlc_winstore_app=0
+AS_IF([test "${SYS}" = "mingw32"],[
+  AS_IF([test "${enable_winstore_app}" = "yes"], [
+    vlc_winstore_app=1
+     VLC_ADD_LIBS([libvlccore], [-lole32 -lruntimeobject])
+     AC_LIBOBJ([gai_strerror])
+    ],[
+     VLC_ADD_LIBS([libvlccore],[-lwinmm])
+    ])
+  ])
+AC_DEFINE_UNQUOTED(VLC_WINSTORE_APP, ${vlc_winstore_app}, [Define to 1 if you want to build for Windows Store apps])
+
 AM_CONDITIONAL(HAVE_LINUX,   test "${SYS}" = "linux")
 AM_CONDITIONAL(HAVE_OS2,     test "${SYS}" = "os2")
-AM_CONDITIONAL(HAVE_WIN32,   test "${SYS}" = "mingw32")
-AM_CONDITIONAL(HAVE_WIN64,   test "${HAVE_WIN64}" = "1")
+
+AM_CONDITIONAL(HAVE_DARWIN,  test "${SYS}" = "darwin")
 AM_CONDITIONAL(HAVE_IOS,     test "${HAVE_IOS}" = "1")
 AM_CONDITIONAL(HAVE_OSX,     test "${HAVE_OSX}" = "1")
 AM_CONDITIONAL(HAVE_TVOS,    test "${HAVE_TVOS}" = "1")
+
+AM_CONDITIONAL(HAVE_WIN32,   test "${SYS}" = "mingw32")
+AM_CONDITIONAL(HAVE_WIN64,   test "${HAVE_WIN64}" = "1") dnl Only used for the packaging
+AM_CONDITIONAL([HAVE_WINSTORE], [test "$vlc_winstore_app" = "1"])
+AM_CONDITIONAL([HAVE_WIN32_DESKTOP], [test "${SYS}" = "mingw32" -a "$vlc_winstore_app" = "0"])
 
 dnl
 dnl Sadly autoconf does not think about testing foo.exe when ask to test
@@ -523,23 +548,6 @@ dnl Check for broken versions of mingw-runtime compatability library
         "${ac_cv_c_fnative_struct}" = "no" && VLC_RESTORE_FLAGS
     fi
 ])
-
-AC_ARG_ENABLE(winstore_app,
-     AS_HELP_STRING([--enable-winstore-app],
-                    [Build targetted for Windows Store apps (default disabled)]))
-
-vlc_winstore_app=0
-AS_IF([test "${SYS}" = "mingw32"],[
-  AS_IF([test "${enable_winstore_app}" = "yes"], [
-    vlc_winstore_app=1
-     VLC_ADD_LIBS([libvlccore], [-lole32 -lruntimeobject])
-     AC_LIBOBJ([gai_strerror])
-    ],[
-     VLC_ADD_LIBS([libvlccore],[-lwinmm])
-    ])
-  ])
-AC_DEFINE_UNQUOTED(VLC_WINSTORE_APP, ${vlc_winstore_app}, [Define to 1 if you want to build for Windows Store apps])
-AM_CONDITIONAL([HAVE_WINSTORE], [test "$vlc_winstore_app" = "1"])
 
 
 dnl
@@ -1522,27 +1530,34 @@ AC_ARG_ENABLE(lua,
     [disable LUA scripting support (default enabled)])])
 if test "${enable_lua}" != "no"
 then
-  PKG_CHECK_MODULES(LUA, lua5.3, [have_lua=yes], [
-    AC_MSG_WARN([${LUA_PKG_ERRORS}, trying Lua 5.2 instead])
+  PKG_CHECK_MODULES(LUA, lua5.2,
+    [ have_lua=yes ],
+    [
+    AC_MSG_WARN([${LUA_PKG_ERRORS}, trying lua 5.1 instead])
 
-    PKG_CHECK_MODULES(LUA, lua5.2, [have_lua=yes], [
-      AC_MSG_WARN([${LUA_PKG_ERRORS}, trying Lua 5.1 instead])
-
-      PKG_CHECK_MODULES(LUA, lua5.1, [have_lua=yes], [
-        AC_MSG_WARN([${LUA_PKG_ERRORS}, trying Lua instead])
-        PKG_CHECK_MODULES(LUA, lua >= 5.1, [have_lua=yes], [
-            AC_MSG_WARN([${LUA_PKG_ERRORS}, trying manual detection instead])
-            have_lua=yes
-            AC_CHECK_HEADERS([lua.h lauxlib.h lualib.h], [], [have_lua=no])
-            AC_CHECK_LIB(lua5.2, luaL_newstate, [LUA_LIBS="-llua5.2"], [
-              AC_CHECK_LIB(lua5.1, luaL_newstate, [LUA_LIBS="-llua5.1"], [
-                AC_CHECK_LIB(lua51, luaL_newstate, [LUA_LIBS="-llua51"], [
-                  AC_CHECK_LIB(lua, luaL_newstate, [LUA_LIBS="-llua"], [
-                    have_lua=no], [-lm])
-                ])
-              ])
-            ])
-          ])
+    PKG_CHECK_MODULES(LUA, lua5.1,
+      [ have_lua=yes ],
+      [
+      AC_MSG_WARN([${LUA_PKG_ERRORS}, trying lua >= 5.1 instead])
+      PKG_CHECK_MODULES(LUA, lua >= 5.1,
+        [ have_lua=yes ],
+        [
+          AC_MSG_WARN([${LUA_PKG_ERRORS}, trying manual detection instead])
+          have_lua=yes
+          AC_CHECK_HEADERS([lua.h lauxlib.h lualib.h],
+            [],
+            [ have_lua=no ] )
+          AC_CHECK_LIB(  lua5.2 , luaL_newstate,
+            [LUA_LIBS="-llua5.2"],
+          AC_CHECK_LIB( lua5.1 , luaL_newstate,
+            [LUA_LIBS="-llua5.1"],
+            AC_CHECK_LIB( lua51 , luaL_newstate,
+              [LUA_LIBS="-llua51"],
+              AC_CHECK_LIB( lua , luaL_newstate,
+                [LUA_LIBS="-llua"],
+                [ have_lua=no
+                ], [-lm])
+            )))
         ])
       ])
     ])
@@ -1550,7 +1565,7 @@ then
       AC_MSG_ERROR([Could not find lua. Lua is needed for some interfaces (rc, telnet, http) as well as many other custom scripts. Use --disable-lua to ignore this error.])
   fi
   AC_ARG_VAR([LUAC], [LUA byte compiler])
-  AC_PATH_PROGS(LUAC, [${LUAC} luac5.3 luac], [false])
+  AC_CHECK_PROGS(LUAC, [${LUAC} luac], [false])
   AS_IF([test "${LUAC}" = "false"], [
     AC_MSG_ERROR([Could not find the LUA byte compiler.])
   ])
@@ -3302,13 +3317,10 @@ AC_ARG_ENABLE(directx,
     enable_directx="no"
   ])
 ])
-have_directx="no"
 AS_IF([test "${enable_directx}" != "no"], [
   dnl DirectDraw
   AC_CHECK_HEADERS(ddraw.h, [
-    have_directx="yes"
-  ], [
-    AC_MSG_ERROR([Cannot find DirectX headers!])
+    VLC_ADD_PLUGIN([directdraw])
   ])
 
   dnl OpenGL
@@ -3334,7 +3346,6 @@ AS_IF([test "${enable_directx}" != "no"], [
     VLC_ADD_PLUGIN([direct2d])
   ])
 ])
-AM_CONDITIONAL([HAVE_DIRECTX], [test "$have_directx" = "yes"])
 
 dnl
 dnl  Linux framebuffer module
